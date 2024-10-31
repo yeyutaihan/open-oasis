@@ -112,6 +112,7 @@ with torch.no_grad():
     x = (vae.decode(x / scaling_factor) + 1) / 2
 x = rearrange(x, "(b t) c h w -> b t h w c", t=total_frames)
 
+# save video
 x = torch.clamp(x, 0, 1)
 x = (x * 255).byte()
 write_video("video.mp4", x[0], fps=20)
