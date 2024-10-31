@@ -26,7 +26,7 @@ huggingface-cli download Etched/oasis-500m vit-l-20.pt  # ViT VAE checkpoint
 ## Basic Usage
 We include a basic inference script that loads a prompt frame from a video and generates additional frames conditioned on actions.
 ```
-python inference.py
+python generate.py
 ```
 The resulting video will be saved to `video.mp4`.
 
