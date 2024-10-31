@@ -4,7 +4,7 @@
 
 ![](./media/thumb.png)
 
-Oasis is an interactive world model developed by [Decart](https://www.decart.ai/) and [Etched](https://www.etched.com/). Based on diffusion transformers, Oasis takes in user keyboard input and generates gameplay in an autoregressive manner. We release the weights for Oasis 500M, a downscaled version of the model, along with inference code for action-conditional frame generation.
+Oasis is an interactive world model developed by [Decart](https://www.decart.ai/) and [Etched](https://www.etched.com/). Based on diffusion transformers, Oasis takes in user keyboard input and generates gameplay in an autoregressive manner. We release the weights for Oasis 500M, a downscaled version of the model, along with inference code for action-conditional frame generation. To use the most powerful version of the model, be sure to check out the [live demo](https://oasis.us.decart.ai/)!
 
 For more details, see our [joint blog post](https://oasis-model.github.io/) to learn more.
 
