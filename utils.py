@@ -1,54 +1,14 @@
 """
 Adapted from https://github.com/buoyancy99/diffusion-forcing/blob/main/algorithms/diffusion_forcing/models/utils.py
+Action format derived from VPT https://github.com/openai/Video-Pre-Training
 """
 import math
 import torch
 from torch import nn
 from einops import rearrange, parse_shape
-from sklearn.decomposition import PCA
 from typing import Mapping, Sequence
 import torch
 from einops import rearrange
-
-
-
-def exists(val):
-    return val is not None
-
-
-def default(val, d):
-    if exists(val):
-        return val
-    return d() if callable(d) else d
-
-
-def extract(a, t, x_shape):
-    f, b = t.shape
-    out = a[t]
-    return out.reshape(f, b, *((1,) * (len(x_shape) - 2)))
-
-
-def linear_beta_schedule(timesteps):
-    """
-    linear schedule, proposed in original ddpm paper
-    """
-    scale = 1000 / timesteps
-    beta_start = scale * 0.0001
-    beta_end = scale * 0.02
-    return torch.linspace(beta_start, beta_end, timesteps, dtype=torch.float32)
-
-
-def cosine_beta_schedule(timesteps, s=0.008):
-    """
-    cosine schedule
-    as proposed in https://openreview.net/forum?id=-NEXDKk8gZ
-    """
-    steps = timesteps + 1
-    t = torch.linspace(0, timesteps, steps, dtype=torch.float32) / timesteps
-    alphas_cumprod = torch.cos((t + s) / (1 + s) * math.pi * 0.5) ** 2
-    alphas_cumprod = alphas_cumprod / alphas_cumprod[0]
-    betas = 1 - (alphas_cumprod[1:] / alphas_cumprod[:-1])
-    return torch.clip(betas, 0, 0.999)
 
 
 def sigmoid_beta_schedule(timesteps, start=-3, end=3, tau=1, clamp_min=1e-5):

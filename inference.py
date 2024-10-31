@@ -26,7 +26,7 @@ vae = vae.to(device).eval()
 
 # sampling params
 B = 1
-total_frames = 32
+total_frames = 10
 max_noise_level = 1000
 ddim_noise_steps = 100
 stabilization_level = 15
@@ -71,20 +71,16 @@ for i in tqdm(range(n_prompt_frames, total_frames)):
     start_frame = max(0, i + 1 - model.max_frames)
 
     for noise_idx in reversed(range(1, ddim_noise_steps + 1)):
-        # set up noise indices for each frame
-        _t = torch.full((B, i + 1), -1, dtype=torch.long, device=device)
-        _t[:, -1] = noise_range[noise_idx]
-        _t_next = torch.full((B, i + 1), -1, dtype=torch.long, device=device)
-        _t_next[:, -1] = noise_range[noise_idx - 1]
-        t = torch.where(_t < 0, stabilization_level - 1, _t).long()
-        t_next = torch.where(_t_next < 0, stabilization_level - 1, _t_next).long()
-
-        # partially noise context frames
+        # set up noise values
         ctx_noise_idx = min(noise_idx, ctx_max_noise_idx)
-        t = torch.where(_t < 0, noise_range[ctx_noise_idx], _t).long()
-        t_next = torch.where(_t_next < 0, noise_range[ctx_noise_idx], _t_next).long()
+        t_ctx  = torch.full((B, i), noise_range[ctx_noise_idx], dtype=torch.long, device=device)
+        t      = torch.full((B, 1), noise_range[noise_idx],     dtype=torch.long, device=device)
+        t_next = torch.full((B, 1), noise_range[noise_idx - 1], dtype=torch.long, device=device)
+        t_next = torch.where(t_next < 0, t, t_next)
+        t = torch.cat([t_ctx, t], dim=1)
+        t_next = torch.cat([t_ctx, t_next], dim=1)
 
-        # actually add the noise to the context
+        # add some noise to the context
         ctx_noise = torch.randn_like(x[:, :-1])
         ctx_noise = torch.clamp(ctx_noise, -noise_abs_max, +noise_abs_max)
         x_curr = x.clone()
