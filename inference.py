@@ -26,16 +26,15 @@ vae = vae.to(device).eval()
 
 # sampling params
 B = 1
-total_frames = 10
+total_frames = 32
 max_noise_level = 1000
 ddim_noise_steps = 100
-stabilization_level = 15
 noise_range = torch.linspace(-1, max_noise_level - 1, ddim_noise_steps + 1)
 noise_abs_max = 20
 ctx_max_noise_idx = ddim_noise_steps // 10 * 3
 
 # get input video 
-video_id = "treechop-f153ac423f61-20210916-183423.chunk_000"
+video_id = "snippy-chartreuse-mastiff-f79998db196d-20220401-224517.chunk_001"
 mp4_path = f"sample_data/{video_id}.mp4"
 actions_path = f"sample_data/{video_id}.actions.pt"
 video = read_video(mp4_path, pts_unit="sec")[0].float() / 255
