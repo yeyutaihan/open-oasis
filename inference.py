@@ -1,3 +1,9 @@
+"""
+References:
+    - DiT: https://github.com/facebookresearch/DiT/blob/main/models.py
+    - Diffusion Forcing: https://github.com/buoyancy99/diffusion-forcing
+    - Latte: https://github.com/Vchitect/Latte/blob/main/models/latte.py
+"""
 import torch
 from dit import DiT_models
 from vae import VAE_models

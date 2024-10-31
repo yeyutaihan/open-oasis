@@ -1,3 +1,6 @@
+"""
+Adapted from https://github.com/endernewton/tokenizer/blob/vae-synced/models_vit.py
+"""
 import numpy as np
 import math
 import functools

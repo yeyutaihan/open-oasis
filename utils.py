@@ -1,3 +1,6 @@
+"""
+Adapted from https://github.com/buoyancy99/diffusion-forcing/blob/main/algorithms/diffusion_forcing/models/utils.py
+"""
 import math
 import torch
 from torch import nn

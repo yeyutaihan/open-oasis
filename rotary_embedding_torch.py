@@ -1,5 +1,6 @@
-# Thanks to lucidrains.
-# Adapted from https://github.com/lucidrains/rotary-embedding-torch/blob/main/rotary_embedding_torch/rotary_embedding_torch.py
+"""
+Adapted from https://github.com/lucidrains/rotary-embedding-torch/blob/main/rotary_embedding_torch/rotary_embedding_torch.py
+"""
 
 from __future__ import annotations
 from math import pi, log
