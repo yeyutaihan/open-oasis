@@ -29,14 +29,23 @@ vae = VAE_models[vae_ckpt["model_name"]]()
 vae.load_state_dict(vae_ckpt["state_dict"])
 vae = vae.to(device).eval()
 
+# sampling params
+B = 1
+total_frames = 32
+max_noise_level = 1000
+ddim_noise_steps = 100
+stabilization_level = 15
+noise_range = torch.linspace(-1, max_noise_level - 1, ddim_noise_steps + 1)
+noise_abs_max = 20
+
 # get input video 
 video_id = "Player729-f153ac423f61-20210806-224813.chunk_000"
 mp4_path = f"sample_data/{video_id}.mp4"
 actions_path = f"sample_data/{video_id}.actions.pt"
 video = read_video(mp4_path, pts_unit="sec")[0].float() / 255
 actions = one_hot_actions(torch.load(actions_path))
-video = video[:10].unsqueeze(0)
-actions = actions[:10].unsqueeze(0)
+video = video[:total_frames].unsqueeze(0)
+actions = actions[:total_frames].unsqueeze(0)
 
 # sampling inputs
 n_prompt_frames = 2
@@ -51,57 +60,51 @@ with torch.no_grad():
     x = vae.encode(x * 2 - 1).mean * scaling_factor
 x = rearrange(x, "(b t) (h w) c -> b t c h w", t=n_prompt_frames, h=360//20, w=640//20)
 
-# sampling params
-batch_size = x.shape[0]
-total_frames = 10
-max_noise_level = 1000
-ddim_noise_steps = 100
-stabilization_level = 15
-noise_range = torch.linspace(-1, max_noise_level - 1, ddim_noise_steps + 1)
-noise_abs_max = 20
-
+# get alphas
 betas = sigmoid_beta_schedule(max_noise_level).to(device)
 alphas = 1.0 - betas
 alphas_cumprod = torch.cumprod(alphas, dim=0)
 alphas_cumprod = rearrange(alphas_cumprod, "T -> T 1 1 1")
 
 for i in tqdm(range(n_prompt_frames, total_frames)):
-    chunk = torch.randn((batch_size, 1, *x.shape[-3:]), device=device)
+    chunk = torch.randn((B, 1, *x.shape[-3:]), device=device)
     chunk = torch.clamp(chunk, -noise_abs_max, +noise_abs_max)
-    start_frame = max(0, i + 1 - model.max_frames)
     x = torch.cat([x, chunk], dim=1)
+    start_frame = max(0, i + 1 - model.max_frames)
 
     for noise_idx in reversed(range(1, ddim_noise_steps + 1)):
-        k = ddim_noise_steps - (ddim_noise_steps // 10 * 3)
-        ctx_noise_idx = max(noise_idx, k)
-        t_ctx  = torch.full((batch_size, i), noise_range[ctx_noise_idx], dtype=torch.long, device=device)
-        t_curr = torch.full((batch_size, 1), noise_range[noise_idx],     dtype=torch.long, device=device)
-        t_next = torch.full((batch_size, 1), noise_range[noise_idx - 1], dtype=torch.long, device=device)
-        t_curr = torch.cat([t_ctx, t_curr], dim=1)
-        t_next = torch.cat([t_ctx, t_next], dim=1)
+        # set up noise indices for each frame
+        _t = torch.full((B, i + 1), -1, dtype=torch.long, device=device)
+        _t[:, -1] = noise_range[noise_idx]
+        _t_next = torch.full((B, i + 1), -1, dtype=torch.long, device=device)
+        _t_next[:, -1] = noise_range[noise_idx - 1]
+        t = torch.where(_t < 0, stabilization_level - 1, _t).long()
+        t_next = torch.where(_t_next < 0, stabilization_level - 1, _t_next).long()
 
         # partially noise context frames
-        x_ctx = x[:, :-1]
-        ctx_noise = torch.randn_like(x_ctx)
-        ctx_noise = torch.clamp(ctx_noise, -noise_abs_max, +noise_abs_max)
-        x_ctx = alphas_cumprod[t_ctx].sqrt() * x_ctx + (1 - alphas_cumprod[t_ctx]).sqrt() * ctx_noise
+        k = ddim_noise_steps // 10 * 3
+        ctx_noise_idx = min(noise_idx, k)
+        t = torch.where(_t < 0, noise_range[ctx_noise_idx], _t).long()
+        t_next = torch.where(_t_next < 0, noise_range[ctx_noise_idx], _t_next).long()
 
-        # drop-in noised context
+        # actually add the noise to the context
+        ctx_noise = torch.randn_like(x[:, :-1])
+        ctx_noise = torch.clamp(ctx_noise, -noise_abs_max, +noise_abs_max)
         x_curr = x.clone()
-        x_curr[:, :-1] = x_ctx
-        
+        x_curr[:, :-1] = alphas_cumprod[t[:, :-1]].sqrt() * x[:, :-1] + (1 - alphas_cumprod[t[:, :-1]]).sqrt() * ctx_noise
+
+        # get model predictions
         with torch.no_grad():
             with autocast("cuda", dtype=torch.half):
-                v = model(x_curr, t_curr, actions[:, start_frame : i + 1])
+                v = model(x_curr, t, actions[:, start_frame : i + 1])
 
-        x_start = alphas_cumprod[t_curr].sqrt() * x_curr - (1 - alphas_cumprod[t_curr]).sqrt() * v
-        x_noise = ((1 / alphas_cumprod[t_curr]).sqrt() * x_curr - x_start) \
-                / (1 / alphas_cumprod[t_curr] - 1).sqrt()
+        x_start = alphas_cumprod[t].sqrt() * x - (1 - alphas_cumprod[t]).sqrt() * v
+        x_noise = ((1 / alphas_cumprod[t]).sqrt() * x - x_start) \
+                / (1 / alphas_cumprod[t] - 1).sqrt()
 
         # get frame prediction
         x_pred = alphas_cumprod[t_next].sqrt() * x_start + x_noise * (1 - alphas_cumprod[t_next]).sqrt()
-
-        x[:, -1:] = x_pred[:, -1]
+        x[:, -1:] = x_pred[:, -1:]
 
 # vae decoding
 x = rearrange(x, "b t c h w -> (b t) (h w) c")
