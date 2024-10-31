@@ -13,19 +13,15 @@ from torch import autocast
 device = "cuda:0"
 
 # load DiT checkpoint
-ckpt = torch.load("oasis500m.ckpt")
-model_prefix = "diffusion_model.model.module."
-state_dict = {k.replace(model_prefix, "") : v for k, v in ckpt["state_dict"].items() if k.startswith(model_prefix)}
-state_dict = {k : v for k, v in state_dict.items() if "rotary_emb.freqs" not in k}
-torch.save(state_dict, "oasis500m_state_dict.ckpt")
+ckpt = torch.load("oasis500m.pt")
 model = DiT_models["DiT-S/2"]()
-model.load_state_dict(state_dict, strict=False)
+model.load_state_dict(ckpt, strict=False)
 model = model.to(device).eval()
 
 # load VAE checkpoint
-vae_ckpt = torch.load("vit-l-20_ckpt.pt")
-vae = VAE_models[vae_ckpt["model_name"]]()
-vae.load_state_dict(vae_ckpt["state_dict"])
+vae_ckpt = torch.load("vit-l-20.pt")
+vae = VAE_models["vit-l-20-shallow-encoder"]()
+vae.load_state_dict(vae_ckpt)
 vae = vae.to(device).eval()
 
 # sampling params
@@ -39,7 +35,7 @@ noise_abs_max = 20
 ctx_max_noise_idx = ddim_noise_steps // 10 * 3
 
 # get input video 
-video_id = "Player729-f153ac423f61-20210806-224813.chunk_000"
+video_id = "treechop-f153ac423f61-20210916-183423.chunk_000"
 mp4_path = f"sample_data/{video_id}.mp4"
 actions_path = f"sample_data/{video_id}.actions.pt"
 video = read_video(mp4_path, pts_unit="sec")[0].float() / 255

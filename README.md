@@ -1,2 +1,7 @@
-# open-oasis
-Inference script for Oasis 500M
+# Oasis 500M
+
+!()[media/arg.png]
+!()[media/thumb.png]
+
+
+
