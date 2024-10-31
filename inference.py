@@ -10,6 +10,7 @@ from utils import one_hot_actions, sigmoid_beta_schedule
 from tqdm import tqdm
 from einops import rearrange
 from torch import autocast
+assert torch.cuda.is_available()
 device = "cuda:0"
 
 # load DiT checkpoint
@@ -26,7 +27,7 @@ vae = vae.to(device).eval()
 
 # sampling params
 B = 1
-total_frames = 32
+total_frames = 64
 max_noise_level = 1000
 ddim_noise_steps = 100
 noise_range = torch.linspace(-1, max_noise_level - 1, ddim_noise_steps + 1)
@@ -43,19 +44,18 @@ video = video[:total_frames].unsqueeze(0)
 actions = actions[:total_frames].unsqueeze(0)
 
 # sampling inputs
-n_prompt_frames = 2
+n_prompt_frames = 1
 x = video[:, :n_prompt_frames]
 x = x.to(device)
 actions = actions.to(device)
 
 # vae encoding
 scaling_factor = 0.07843137255
-ps = 20
 x = rearrange(x, "b t h w c -> (b t) c h w")
 H, W = x.shape[-2:]
 with torch.no_grad():
     x = vae.encode(x * 2 - 1).mean * scaling_factor
-x = rearrange(x, "(b t) (h w) c -> b t c h w", t=n_prompt_frames, h=H//ps, w=W//ps)
+x = rearrange(x, "(b t) (h w) c -> b t c h w", t=n_prompt_frames, h=H//vae.patch_size, w=W//vae.patch_size)
 
 # get alphas
 betas = sigmoid_beta_schedule(max_noise_level).to(device)
@@ -63,6 +63,7 @@ alphas = 1.0 - betas
 alphas_cumprod = torch.cumprod(alphas, dim=0)
 alphas_cumprod = rearrange(alphas_cumprod, "T -> T 1 1 1")
 
+# sampling loop
 for i in tqdm(range(n_prompt_frames, total_frames)):
     chunk = torch.randn((B, 1, *x.shape[-3:]), device=device)
     chunk = torch.clamp(chunk, -noise_abs_max, +noise_abs_max)
@@ -79,19 +80,24 @@ for i in tqdm(range(n_prompt_frames, total_frames)):
         t = torch.cat([t_ctx, t], dim=1)
         t_next = torch.cat([t_ctx, t_next], dim=1)
 
-        # add some noise to the context
-        ctx_noise = torch.randn_like(x[:, :-1])
-        ctx_noise = torch.clamp(ctx_noise, -noise_abs_max, +noise_abs_max)
+        # sliding window
         x_curr = x.clone()
-        x_curr[:, :-1] = alphas_cumprod[t[:, :-1]].sqrt() * x[:, :-1] + (1 - alphas_cumprod[t[:, :-1]]).sqrt() * ctx_noise
+        x_curr = x_curr[:, start_frame:]
+        t = t[:, start_frame:]
+        t_next = t_next[:, start_frame:]
+
+        # add some noise to the context
+        ctx_noise = torch.randn_like(x_curr[:, :-1])
+        ctx_noise = torch.clamp(ctx_noise, -noise_abs_max, +noise_abs_max)
+        x_curr[:, :-1] = alphas_cumprod[t[:, :-1]].sqrt() * x_curr[:, :-1] + (1 - alphas_cumprod[t[:, :-1]]).sqrt() * ctx_noise
 
         # get model predictions
         with torch.no_grad():
             with autocast("cuda", dtype=torch.half):
                 v = model(x_curr, t, actions[:, start_frame : i + 1])
 
-        x_start = alphas_cumprod[t].sqrt() * x - (1 - alphas_cumprod[t]).sqrt() * v
-        x_noise = ((1 / alphas_cumprod[t]).sqrt() * x - x_start) \
+        x_start = alphas_cumprod[t].sqrt() * x_curr - (1 - alphas_cumprod[t]).sqrt() * v
+        x_noise = ((1 / alphas_cumprod[t]).sqrt() * x_curr - x_start) \
                 / (1 / alphas_cumprod[t] - 1).sqrt()
 
         # get frame prediction

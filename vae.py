@@ -1,5 +1,7 @@
 """
-Adapted from https://github.com/endernewton/tokenizer/blob/vae-synced/models_vit.py
+References:
+    - VQGAN: https://github.com/CompVis/taming-transformers
+    - MAE: https://github.com/facebookresearch/mae
 """
 import numpy as np
 import math
@@ -12,6 +14,7 @@ from einops import rearrange
 from timm.models.vision_transformer import Mlp
 from timm.layers.helpers import to_2tuple
 from rotary_embedding_torch import RotaryEmbedding, apply_rotary_emb
+from dit import PatchEmbed
 
 class DiagonalGaussianDistribution(object):
     def __init__(self, parameters, deterministic=False, dim=1):
@@ -37,34 +40,6 @@ class DiagonalGaussianDistribution(object):
             device=self.parameters.device
         )
         return x
-
-    def kl(self, other=None):
-        if self.deterministic:
-            return torch.Tensor([0.0])
-        else:
-            if other is None:
-                return 0.5 * torch.mean(
-                    torch.pow(self.mean, 2) + self.var - 1.0 - self.logvar,
-                    dim=self.dims,
-                )
-            else:
-                return 0.5 * torch.mean(
-                    torch.pow(self.mean - other.mean, 2) / other.var
-                    + self.var / other.var
-                    - 1.0
-                    - self.logvar
-                    + other.logvar,
-                    dim=self.dims,
-                )
-
-    def nll(self, sample):
-        if self.deterministic:
-            return torch.Tensor([0.0])
-        logtwopi = np.log(2.0 * np.pi)
-        return 0.5 * torch.mean(
-            logtwopi + self.logvar + torch.pow(sample - self.mean, 2) / self.var,
-            dim=self.dims,
-        )
 
     def mode(self):
         return self.mean
@@ -179,45 +154,6 @@ class AttentionBlock(nn.Module):
     def forward(self, x):
         x = x + self.drop_path(self.attn(self.norm1(x)))
         x = x + self.drop_path(self.mlp(self.norm2(x)))
-        return x
-
-
-class PatchEmbed(nn.Module):
-    """2D Image to Patch Embedding"""
-
-    def __init__(
-        self,
-        img_height=256,
-        img_width=256,
-        patch_size=16,
-        in_chans=3,
-        embed_dim=768,
-        norm_layer=None,
-        flatten=True,
-    ):
-        super().__init__()
-        img_size = (img_height, img_width)
-        patch_size = to_2tuple(patch_size)
-        self.img_size = img_size
-        self.patch_size = patch_size
-        self.grid_size = (img_size[0] // patch_size[0], img_size[1] // patch_size[1])
-        self.num_patches = self.grid_size[0] * self.grid_size[1]
-        self.flatten = flatten
-
-        self.proj = nn.Conv2d(
-            in_chans, embed_dim, kernel_size=patch_size, stride=patch_size
-        )
-        self.norm = norm_layer(embed_dim) if norm_layer else nn.Identity()
-
-    def forward(self, x, random_sample=False):
-        B, C, H, W = x.shape
-        assert random_sample or (
-            H == self.img_size[0] and W == self.img_size[1]
-        ), f"Input image size ({H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]})."
-        x = self.proj(x)
-        if self.flatten:
-            x = x.flatten(2).transpose(1, 2)  # BCHW -> BNC
-        x = self.norm(x)
         return x
 
 
@@ -414,99 +350,12 @@ class AutoencoderKL(nn.Module):
         x = x.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format).float()
         return x
 
-    def synced_step(self, inputs, labels, ratio, split="train"):
-        rec, post, latent = self.autoencode(inputs)
-        loss, log_dict = self.loss(
-            inputs,
-            rec,
-            post,
-            latent,
-            0,
-            ratio,
-            last_layer=self.get_last_layer(),
-            split=split,
-        )
-        d_loss, log_dict_2 = self.loss(
-            inputs,
-            rec,
-            post,
-            latent,
-            1,
-            ratio,
-            last_layer=self.get_last_layer(),
-            split=split,
-        )
-        log_dict.update(log_dict_2)
-        return loss, d_loss, log_dict
-
-    def disc_loss(self, inputs, rec, post, latent, ratio=1.0, split="train"):
-        d_loss, log_dict = self.loss(
-            inputs,
-            rec,
-            post,
-            latent,
-            1,
-            ratio,
-            last_layer=self.get_last_layer(),
-            split=split,
-        )
-        return d_loss, log_dict
-
-    def gen_loss(self, inputs, rec, post, latent, ratio=0.0, split="train"):
-        loss, log_dict = self.loss(
-            inputs,
-            rec,
-            post,
-            latent,
-            0,
-            ratio,
-            last_layer=self.get_last_layer(),
-            split=split,
-        )
-        return loss, log_dict
-
     def forward(self, inputs, labels, split="train"):
         rec, post, latent = self.autoencode(inputs)
         return rec, post, latent
 
-    def configure_optimizers(
-        self,
-        learning_rate,
-        beta1=0.5,
-        beta2=0.9,
-        weight_decay=0.0,
-    ):
-        # remove parameters in loss
-        param_loss_names = ["loss." + n for n, p in self.loss.named_parameters()]
-        param_ae = [p for n, p in self.named_parameters() if n not in param_loss_names]
-        opt_ae = torch.optim.AdamW(
-            param_ae,
-            lr=learning_rate,
-            betas=(beta1, beta2),
-            weight_decay=weight_decay,
-        )
-        opt_disc = torch.optim.AdamW(
-            self.loss.discriminator.parameters(),
-            lr=learning_rate,
-            betas=(beta1, beta2),
-            weight_decay=weight_decay,
-        )
-        return opt_ae, opt_disc
-
     def get_last_layer(self):
         return self.predictor.weight
-
-    @torch.no_grad()
-    def log_images(self, x, only_inputs=False):
-        log = dict()
-        if not only_inputs:
-            xrec, posterior, latent = self.autoencode(x)
-            log["samples"] = self.decode(torch.randn_like(posterior.sample()))
-            log["reconstructions"] = xrec
-        log["inputs"] = x
-        return log
-
-
 
 def ViT_L_20_Shallow_Encoder(**kwargs):
     if "latent_dim" in kwargs:
