@@ -66,37 +66,42 @@ alphas_cumprod = torch.cumprod(alphas, dim=0)
 alphas_cumprod = rearrange(alphas_cumprod, "T -> T 1 1 1")
 
 for i in tqdm(range(n_prompt_frames, total_frames)):
-    chunk = torch.randn((1, 1, *x.shape[-3:]), device=device)
+    chunk = torch.randn((batch_size, 1, *x.shape[-3:]), device=device)
     chunk = torch.clamp(chunk, -noise_abs_max, +noise_abs_max)
-    x = torch.cat([x, chunk], dim=1)
     start_frame = max(0, i + 1 - model.max_frames)
+    x = torch.cat([x, chunk], dim=1)
 
     for noise_idx in reversed(range(1, ddim_noise_steps + 1)):
-        _t = torch.full((batch_size, i + 1), -1, dtype=torch.long, device=device)
-        _t[:, -1] = noise_range[noise_idx]
-        _t_next = torch.full((batch_size, i + 1), -1, dtype=torch.long, device=device)
-        _t_next[:, -1] = noise_range[noise_idx - 1]
-        t = torch.where(_t < 0, stabilization_level - 1, _t)
-        t_next = torch.where(_t_next < 0, stabilization_level - 1, _t_next)
+        k = ddim_noise_steps - (ddim_noise_steps // 10 * 3)
+        ctx_noise_idx = max(noise_idx, k)
+        t_ctx  = torch.full((batch_size, i), noise_range[ctx_noise_idx], dtype=torch.long, device=device)
+        t_curr = torch.full((batch_size, 1), noise_range[noise_idx],     dtype=torch.long, device=device)
+        t_next = torch.full((batch_size, 1), noise_range[noise_idx - 1], dtype=torch.long, device=device)
+        t_curr = torch.cat([t_ctx, t_curr], dim=1)
+        t_next = torch.cat([t_ctx, t_next], dim=1)
 
-        alpha = alphas_cumprod[t]
-        mask = rearrange(_t_next < 0, "b t -> b t 1 1 1")
-        alpha_next = torch.where(mask, torch.ones_like(alpha), alphas_cumprod[t_next])
-        c = (1 - alpha_next).sqrt()
+        # partially noise context frames
+        x_ctx = x[:, :-1]
+        ctx_noise = torch.randn_like(x_ctx)
+        ctx_noise = torch.clamp(ctx_noise, -noise_abs_max, +noise_abs_max)
+        x_ctx = alphas_cumprod[t_ctx].sqrt() * x_ctx + (1 - alphas_cumprod[t_ctx]).sqrt() * ctx_noise
+
+        # drop-in noised context
+        x_curr = x.clone()
+        x_curr[:, :-1] = x_ctx
         
         with torch.no_grad():
             with autocast("cuda", dtype=torch.half):
-                v = model(x, t, actions[:, start_frame : i + 1])
+                v = model(x_curr, t_curr, actions[:, start_frame : i + 1])
 
-        x_start = alphas_cumprod[t].sqrt() * x - (1 - alphas_cumprod[t]).sqrt() * v
-        x_noise = ((1 / alphas_cumprod[t]).sqrt() * x - x_start) \
-                / (1 / alphas_cumprod[t] - 1).sqrt()
+        x_start = alphas_cumprod[t_curr].sqrt() * x_curr - (1 - alphas_cumprod[t_curr]).sqrt() * v
+        x_noise = ((1 / alphas_cumprod[t_curr]).sqrt() * x_curr - x_start) \
+                / (1 / alphas_cumprod[t_curr] - 1).sqrt()
 
-        x_pred = alpha_next.sqrt() * x_start + x_noise * c
+        # get frame prediction
+        x_pred = alphas_cumprod[t_next].sqrt() * x_start + x_noise * (1 - alphas_cumprod[t_next]).sqrt()
 
-        mask = rearrange(_t == _t_next, "b t -> b t 1 1 1")
-        x_pred = torch.where(mask, x, x_pred.float())
-        x = x_pred
+        x[:, -1:] = x_pred[:, -1]
 
 # vae decoding
 x = rearrange(x, "b t c h w -> (b t) (h w) c")
