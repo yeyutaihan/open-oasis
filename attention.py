@@ -6,7 +6,6 @@ from torch.nn import functional as F
 from einops import rearrange
 from rotary_embedding_torch import RotaryEmbedding, apply_rotary_emb
 from embeddings import TimestepEmbedding, Timesteps, Positions2d
-from utils import get_einops_wrapped_module
 
 class TemporalAxialAttention(nn.Module):
     def __init__(
