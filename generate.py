@@ -27,7 +27,7 @@ vae = vae.to(device).eval()
 
 # sampling params
 B = 1
-total_frames = 64
+total_frames = 32
 max_noise_level = 1000
 ddim_noise_steps = 100
 noise_range = torch.linspace(-1, max_noise_level - 1, ddim_noise_steps + 1)
@@ -40,8 +40,9 @@ mp4_path = f"sample_data/{video_id}.mp4"
 actions_path = f"sample_data/{video_id}.actions.pt"
 video = read_video(mp4_path, pts_unit="sec")[0].float() / 255
 actions = one_hot_actions(torch.load(actions_path))
-video = video[:total_frames].unsqueeze(0)
-actions = actions[:total_frames].unsqueeze(0)
+offset = 100
+video = video[offset:offset+total_frames].unsqueeze(0)
+actions = actions[offset:offset+total_frames].unsqueeze(0)
 
 # sampling inputs
 n_prompt_frames = 1
