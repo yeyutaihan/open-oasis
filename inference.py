@@ -1,8 +1,6 @@
 """
 References:
-    - DiT: https://github.com/facebookresearch/DiT/blob/main/models.py
     - Diffusion Forcing: https://github.com/buoyancy99/diffusion-forcing
-    - Latte: https://github.com/Vchitect/Latte/blob/main/models/latte.py
 """
 import torch
 from dit import DiT_models
@@ -19,6 +17,7 @@ ckpt = torch.load("oasis500m.ckpt")
 model_prefix = "diffusion_model.model.module."
 state_dict = {k.replace(model_prefix, "") : v for k, v in ckpt["state_dict"].items() if k.startswith(model_prefix)}
 state_dict = {k : v for k, v in state_dict.items() if "rotary_emb.freqs" not in k}
+torch.save(state_dict, "oasis500m_state_dict.ckpt")
 model = DiT_models["DiT-S/2"]()
 model.load_state_dict(state_dict, strict=False)
 model = model.to(device).eval()
@@ -37,6 +36,7 @@ ddim_noise_steps = 100
 stabilization_level = 15
 noise_range = torch.linspace(-1, max_noise_level - 1, ddim_noise_steps + 1)
 noise_abs_max = 20
+ctx_max_noise_idx = ddim_noise_steps // 10 * 3
 
 # get input video 
 video_id = "Player729-f153ac423f61-20210806-224813.chunk_000"
@@ -55,10 +55,12 @@ actions = actions.to(device)
 
 # vae encoding
 scaling_factor = 0.07843137255
+ps = 20
 x = rearrange(x, "b t h w c -> (b t) c h w")
+H, W = x.shape[-2:]
 with torch.no_grad():
     x = vae.encode(x * 2 - 1).mean * scaling_factor
-x = rearrange(x, "(b t) (h w) c -> b t c h w", t=n_prompt_frames, h=360//20, w=640//20)
+x = rearrange(x, "(b t) (h w) c -> b t c h w", t=n_prompt_frames, h=H//ps, w=W//ps)
 
 # get alphas
 betas = sigmoid_beta_schedule(max_noise_level).to(device)
@@ -82,8 +84,7 @@ for i in tqdm(range(n_prompt_frames, total_frames)):
         t_next = torch.where(_t_next < 0, stabilization_level - 1, _t_next).long()
 
         # partially noise context frames
-        k = ddim_noise_steps // 10 * 3
-        ctx_noise_idx = min(noise_idx, k)
+        ctx_noise_idx = min(noise_idx, ctx_max_noise_idx)
         t = torch.where(_t < 0, noise_range[ctx_noise_idx], _t).long()
         t_next = torch.where(_t_next < 0, noise_range[ctx_noise_idx], _t_next).long()
 
