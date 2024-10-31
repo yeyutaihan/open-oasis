@@ -28,8 +28,9 @@ We include a basic inference script that loads a prompt frame from a video and g
 ```
 python generate.py
 ```
-The resulting video will be saved to `video.mp4`. Here's an example of a generation from this 500M model!
+The resulting video will be saved to `video.mp4`. Here's are some examples of a generation from this 500M model!
 
 ![](media/sample_0.gif)
+![](media/sample_1.gif)
 
 > Hint: try swapping out the `.mp4` input file in the script to try different environments!
