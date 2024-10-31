@@ -25,8 +25,8 @@ vae = vae.to(device).eval()
 
 # get input video 
 video_id = "Player729-f153ac423f61-20210806-224813.chunk_000"
-mp4_path = f"/vpt-640x360-60s/{video_id}.mp4"
-actions_path = f"/vpt-640x360-60s/{video_id}.actions.pt"
+mp4_path = f"sample_data/{video_id}.mp4"
+actions_path = f"sample_data/{video_id}.actions.pt"
 video = read_video(mp4_path, pts_unit="sec")[0].float() / 255
 actions = one_hot_actions(torch.load(actions_path))
 video = video[:10].unsqueeze(0)
