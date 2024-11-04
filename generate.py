@@ -14,14 +14,14 @@ import argparse
 assert torch.cuda.is_available()
 device = "cuda:0"
 
-parse = argparse.ArgumentParser(description='Generate AI-hallucinated Minecraft videos!')
+parse = argparse.ArgumentParser()
 
-parse.add_argument('--count', type=int, help='How many frames should be generated?', default=32)
-parse.add_argument('--fps', type=int, help='What framerate should be used?', default=20)
-parse.add_argument('--file', type=str, help='What should the video\'s file name be?', default="video.mp4")
-parse.add_argument('--steps', type=int, help='How many steps?', default=50)
+parse.add_argument('--num-frames', type=int, help='How many frames should be generated?', default=32)
+parse.add_argument('--output-path', type=str, help='Path where generated video should be saved.', default="video.mp4")
+parse.add_argument('--fps', type=int, help='What framerate should be used to save the output?', default=20)
+parse.add_argument('--ddim-steps', type=int, help='How many DDIM steps?', default=50)
 
-argv = parse.parse_args()
+args = parse.parse_args()
 
 # load DiT checkpoint
 ckpt = torch.load("oasis500m.pt")
@@ -37,9 +37,9 @@ vae = vae.to(device).eval()
 
 # sampling params
 B = 1
-total_frames = argv.count
+total_frames = args.num_frames
 max_noise_level = 1000
-ddim_noise_steps = argv.steps
+ddim_noise_steps = args.ddim_steps
 noise_range = torch.linspace(-1, max_noise_level - 1, ddim_noise_steps + 1)
 noise_abs_max = 20
 ctx_max_noise_idx = ddim_noise_steps // 10 * 3
@@ -124,5 +124,5 @@ x = rearrange(x, "(b t) c h w -> b t h w c", t=total_frames)
 # save video
 x = torch.clamp(x, 0, 1)
 x = (x * 255).byte()
-write_video(argv.file, x[0].cpu(), fps=argv.fps)
-print("generation saved to video.mp4.")
+write_video(args.output_path, x[0].cpu(), fps=argv.fps)
+print(f"generation saved to {args.output_path}.")
