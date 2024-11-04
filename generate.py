@@ -16,6 +16,8 @@ device = "cuda:0"
 
 parse = argparse.ArgumentParser()
 
+parse.add_argument('--oasis-ckpt', type=str, help='Path to Oasis DiT checkpoint.', default="oasis500m.pt")
+parse.add_argument('--vae-ckpt', type=str, help='Path to Oasis ViT-VAE checkpoint.', default="vit-l-20.pt")
 parse.add_argument('--num-frames', type=int, help='How many frames should be generated?', default=32)
 parse.add_argument('--output-path', type=str, help='Path where generated video should be saved.', default="video.mp4")
 parse.add_argument('--fps', type=int, help='What framerate should be used to save the output?', default=20)
@@ -24,13 +26,13 @@ parse.add_argument('--ddim-steps', type=int, help='How many DDIM steps?', defaul
 args = parse.parse_args()
 
 # load DiT checkpoint
-ckpt = torch.load("oasis500m.pt")
+ckpt = torch.load(args.oasis_ckpt)
 model = DiT_models["DiT-S/2"]()
 model.load_state_dict(ckpt, strict=False)
 model = model.to(device).eval()
 
 # load VAE checkpoint
-vae_ckpt = torch.load("vit-l-20.pt")
+vae_ckpt = torch.load(args.vae_ckpt)
 vae = VAE_models["vit-l-20-shallow-encoder"]()
 vae.load_state_dict(vae_ckpt)
 vae = vae.to(device).eval()
