@@ -59,7 +59,7 @@ mp4_path = f"sample_data/{video_id}.mp4"
 actions_path = f"sample_data/{video_id}.actions.pt"
 video = read_video(mp4_path, pts_unit="sec")[0].float() / 255
 actions = one_hot_actions(torch.load(actions_path))
-offset = 100
+offset = 12*20 # change to where you want to start in the video!
 video = video[offset:offset+total_frames].unsqueeze(0)
 actions = actions[offset:offset+total_frames].unsqueeze(0)
 
