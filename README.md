@@ -21,10 +21,11 @@ pip install einops diffusers timm av
 ```
 
 ## Download the model weights
+Inside the `open-oasis/` directory, run:
 ```
 huggingface-cli login
-huggingface-cli download Etched/oasis-500m oasis500m.pt # DiT checkpoint
-huggingface-cli download Etched/oasis-500m vit-l-20.pt  # ViT VAE checkpoint
+huggingface-cli download Etched/oasis-500m oasis500m.safetensors # DiT checkpoint
+huggingface-cli download Etched/oasis-500m vit-l-20.safetensors  # ViT VAE checkpoint
 ```
 
 ## Basic Usage
