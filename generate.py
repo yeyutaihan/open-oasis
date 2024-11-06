@@ -11,16 +11,17 @@ from tqdm import tqdm
 from einops import rearrange
 from torch import autocast
 from safetensors.torch import load_model
-from line_profiler import profile
 import argparse
+from pprint import pprint
+import os
 
 assert torch.cuda.is_available()
 device = "cuda:0"
 
-@profile
 def main(args):
     # load DiT checkpoint
     model = DiT_models["DiT-S/2"]()
+    print(f"loading Oasis-500M from oasis-ckpt={os.path.abspath(args.oasis_ckpt)}...")
     if args.oasis_ckpt.endswith(".pt"):
         ckpt = torch.load(args.oasis_ckpt, weights_only=True)
         model.load_state_dict(ckpt, strict=False)
@@ -30,6 +31,7 @@ def main(args):
 
     # load VAE checkpoint
     vae = VAE_models["vit-l-20-shallow-encoder"]()
+    print(f"loading ViT-VAE-L-20 from oasis-ckpt={os.path.abspath(args.oasis_ckpt)}...")
     if args.vae_ckpt.endswith(".pt"):
         vae_ckpt = torch.load(args.vae_ckpt, weights_only=True)
         vae.load_state_dict(vae_ckpt)
@@ -141,5 +143,7 @@ if __name__ == "__main__":
     parse.add_argument('--ddim-steps', type=int, help='How many DDIM steps?', default=50)
 
     args = parse.parse_args()
+    print("inference args:")
+    pprint(vars(args))
     main(args)
 
