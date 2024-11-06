@@ -55,6 +55,7 @@ def main(args):
     offset = 12*20 # change to where you want to start in the video!
     video = video[offset:offset+total_frames].unsqueeze(0)
     actions = actions[offset:offset+total_frames].unsqueeze(0)
+    actions[:, :1] = torch.zeros_like(actions[:, :1]) # zero-init first frame's action
 
     # sampling inputs
     n_prompt_frames = 1
