@@ -66,9 +66,6 @@ def one_hot_actions(actions: Sequence[Mapping[str, int]]) -> torch.Tensor:
                     value = current_actions["camera"][1]
                 else:
                     raise ValueError(f"Unknown camera action key: {action_key}")
-                # NOTE these numbers specific to the camera quantization used in
-                # https://github.com/etched-ai/dreamcraft/blob/216e952f795bb3da598639a109bcdba4d2067b69/spark/preprocess_vpt_to_videos_actions.py#L312
-                # see method `compress_mouse`
                 max_val = 20
                 bin_size = 0.5
                 num_buckets = int(max_val / bin_size)
