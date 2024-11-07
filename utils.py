@@ -2,6 +2,7 @@
 Adapted from https://github.com/buoyancy99/diffusion-forcing/blob/main/algorithms/diffusion_forcing/models/utils.py
 Action format derived from VPT https://github.com/openai/Video-Pre-Training
 """
+
 import math
 import torch
 from torch import nn
@@ -21,7 +22,9 @@ def sigmoid_beta_schedule(timesteps, start=-3, end=3, tau=1, clamp_min=1e-5):
     t = torch.linspace(0, timesteps, steps, dtype=torch.float32) / timesteps
     v_start = torch.tensor(start / tau).sigmoid()
     v_end = torch.tensor(end / tau).sigmoid()
-    alphas_cumprod = (-((t * (end - start) + start) / tau).sigmoid() + v_end) / (v_end - v_start)
+    alphas_cumprod = (-((t * (end - start) + start) / tau).sigmoid() + v_end) / (
+        v_end - v_start
+    )
     alphas_cumprod = alphas_cumprod / alphas_cumprod[0]
     betas = 1 - (alphas_cumprod[1:] / alphas_cumprod[:-1])
     return torch.clip(betas, 0, 0.999)
@@ -55,6 +58,7 @@ ACTION_KEYS = [
     "drop",
 ]
 
+
 def one_hot_actions(actions: Sequence[Mapping[str, int]]) -> torch.Tensor:
     actions_one_hot = torch.zeros(len(actions), len(ACTION_KEYS))
     for i, current_actions in enumerate(actions):
@@ -70,16 +74,20 @@ def one_hot_actions(actions: Sequence[Mapping[str, int]]) -> torch.Tensor:
                 bin_size = 0.5
                 num_buckets = int(max_val / bin_size)
                 value = (value - num_buckets) / num_buckets
-                assert -1 - 1e-3 <= value <= 1 + 1e-3, f"Camera action value must be in [-1, 1], got {value}"
+                assert (
+                    -1 - 1e-3 <= value <= 1 + 1e-3
+                ), f"Camera action value must be in [-1, 1], got {value}"
             else:
                 value = current_actions[action_key]
                 assert 0 <= value <= 1, f"Action value must be in [0, 1] got {value}"
             actions_one_hot[i, j] = value
-        
+
     return actions_one_hot
+
 
 IMAGE_EXTENSIONS = {"png", "jpg", "jpeg"}
 VIDEO_EXTENSIONS = {"mp4"}
+
 
 def load_prompt(path, video_offset=None, n_prompt_frames=1):
     if path.lower().split(".")[-1] in IMAGE_EXTENSIONS:
@@ -93,13 +101,18 @@ def load_prompt(path, video_offset=None, n_prompt_frames=1):
             prompt = prompt[video_offset:]
         prompt = prompt[:n_prompt_frames]
     else:
-        raise ValueError(f"unrecognized prompt file extension; expected one in {IMAGE_EXTENSIONS} or {VIDEO_EXTENSIONS}")
-    assert prompt.shape[0] == n_prompt_frames, f"input prompt {path} had less than n_prompt_frames={n_prompt_frames} frames"
+        raise ValueError(
+            f"unrecognized prompt file extension; expected one in {IMAGE_EXTENSIONS} or {VIDEO_EXTENSIONS}"
+        )
+    assert (
+        prompt.shape[0] == n_prompt_frames
+    ), f"input prompt {path} had less than n_prompt_frames={n_prompt_frames} frames"
     prompt = resize(prompt, (360, 640))
     # add batch dimension
     prompt = rearrange(prompt, "t c h w -> 1 t c h w")
     prompt = prompt.float() / 255.0
     return prompt
+
 
 def load_actions(path, action_offset=None):
     if path.endswith(".actions.pt"):
@@ -107,10 +120,12 @@ def load_actions(path, action_offset=None):
     elif path.endswith(".one_hot_actions.pt"):
         actions = torch.load(path, weights_only=True)
     else:
-        raise ValueError("unrecognized action file extension; expected '*.actions.pt' or '*.one_hot_actions.pt'")
+        raise ValueError(
+            "unrecognized action file extension; expected '*.actions.pt' or '*.one_hot_actions.pt'"
+        )
     if action_offset is not None:
         actions = actions[action_offset:]
     # add batch dimension
     actions = rearrange(actions, "t d -> 1 t d")
-    actions[:, :1] = torch.zeros_like(actions[:, :1]) # zero-init first frame's action
+    actions[:, :1] = torch.zeros_like(actions[:, :1])  # zero-init first frame's action
     return actions

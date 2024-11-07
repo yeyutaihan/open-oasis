@@ -2,6 +2,7 @@
 References:
     - Diffusion Forcing: https://github.com/buoyancy99/diffusion-forcing
 """
+
 import torch
 from dit import DiT_models
 from vae import VAE_models
@@ -17,6 +18,7 @@ import os
 
 assert torch.cuda.is_available()
 device = "cuda:0"
+
 
 def main(args):
     # load DiT checkpoint
@@ -50,9 +52,15 @@ def main(args):
     ctx_max_noise_idx = ddim_noise_steps // 10 * 3
 
     # get prompt image/video
-    x = load_prompt(args.prompt_path, video_offset=args.video_offset, n_prompt_frames=n_prompt_frames)
+    x = load_prompt(
+        args.prompt_path,
+        video_offset=args.video_offset,
+        n_prompt_frames=n_prompt_frames,
+    )
     # get input action stream
-    actions = load_actions(args.actions_path, action_offset=args.video_offset)[:, :total_frames]
+    actions = load_actions(args.actions_path, action_offset=args.video_offset)[
+        :, :total_frames
+    ]
 
     # sampling inputs
     x = x.to(device)
@@ -64,7 +72,13 @@ def main(args):
     H, W = x.shape[-2:]
     with torch.no_grad():
         x = vae.encode(x * 2 - 1).mean * scaling_factor
-    x = rearrange(x, "(b t) (h w) c -> b t c h w", t=n_prompt_frames, h=H//vae.patch_size, w=W//vae.patch_size)
+    x = rearrange(
+        x,
+        "(b t) (h w) c -> b t c h w",
+        t=n_prompt_frames,
+        h=H // vae.patch_size,
+        w=W // vae.patch_size,
+    )
 
     # get alphas
     betas = sigmoid_beta_schedule(max_noise_level).to(device)
@@ -82,9 +96,15 @@ def main(args):
         for noise_idx in reversed(range(1, ddim_noise_steps + 1)):
             # set up noise values
             ctx_noise_idx = min(noise_idx, ctx_max_noise_idx)
-            t_ctx  = torch.full((B, i), noise_range[ctx_noise_idx], dtype=torch.long, device=device)
-            t      = torch.full((B, 1), noise_range[noise_idx],     dtype=torch.long, device=device)
-            t_next = torch.full((B, 1), noise_range[noise_idx - 1], dtype=torch.long, device=device)
+            t_ctx = torch.full(
+                (B, i), noise_range[ctx_noise_idx], dtype=torch.long, device=device
+            )
+            t = torch.full(
+                (B, 1), noise_range[noise_idx], dtype=torch.long, device=device
+            )
+            t_next = torch.full(
+                (B, 1), noise_range[noise_idx - 1], dtype=torch.long, device=device
+            )
             t_next = torch.where(t_next < 0, t, t_next)
             t = torch.cat([t_ctx, t], dim=1)
             t_next = torch.cat([t_ctx, t_next], dim=1)
@@ -98,19 +118,28 @@ def main(args):
             # add some noise to the context
             ctx_noise = torch.randn_like(x_curr[:, :-1])
             ctx_noise = torch.clamp(ctx_noise, -noise_abs_max, +noise_abs_max)
-            x_curr[:, :-1] = alphas_cumprod[t[:, :-1]].sqrt() * x_curr[:, :-1] + (1 - alphas_cumprod[t[:, :-1]]).sqrt() * ctx_noise
+            x_curr[:, :-1] = (
+                alphas_cumprod[t[:, :-1]].sqrt() * x_curr[:, :-1]
+                + (1 - alphas_cumprod[t[:, :-1]]).sqrt() * ctx_noise
+            )
 
             # get model predictions
             with torch.no_grad():
                 with autocast("cuda", dtype=torch.half):
                     v = model(x_curr, t, actions[:, start_frame : i + 1])
 
-            x_start = alphas_cumprod[t].sqrt() * x_curr - (1 - alphas_cumprod[t]).sqrt() * v
-            x_noise = ((1 / alphas_cumprod[t]).sqrt() * x_curr - x_start) \
-                    / (1 / alphas_cumprod[t] - 1).sqrt()
+            x_start = (
+                alphas_cumprod[t].sqrt() * x_curr - (1 - alphas_cumprod[t]).sqrt() * v
+            )
+            x_noise = ((1 / alphas_cumprod[t]).sqrt() * x_curr - x_start) / (
+                1 / alphas_cumprod[t] - 1
+            ).sqrt()
 
             # get frame prediction
-            x_pred = alphas_cumprod[t_next].sqrt() * x_start + x_noise * (1 - alphas_cumprod[t_next]).sqrt()
+            x_pred = (
+                alphas_cumprod[t_next].sqrt() * x_start
+                + x_noise * (1 - alphas_cumprod[t_next]).sqrt()
+            )
             x[:, -1:] = x_pred[:, -1:]
 
     # vae decoding
@@ -125,22 +154,69 @@ def main(args):
     write_video(args.output_path, x[0].cpu(), fps=args.fps)
     print(f"generation saved to {args.output_path}.")
 
+
 if __name__ == "__main__":
     parse = argparse.ArgumentParser()
 
-    parse.add_argument('--oasis-ckpt', type=str, help='Path to Oasis DiT checkpoint.', default="oasis500m.safetensors")
-    parse.add_argument('--vae-ckpt', type=str, help='Path to Oasis ViT-VAE checkpoint.', default="vit-l-20.safetensors")
-    parse.add_argument('--num-frames', type=int, help='How many frames should the output be?', default=32)
-    parse.add_argument('--prompt-path', type=str, help='Path to image or video to condition generation on.', default="sample_data/sample_image_0.png")
-    parse.add_argument('--actions-path', type=str, help='File to load actions from (.actions.pt or .one_hot_actions.pt)', default="sample_data/sample_actions_0.one_hot_actions.pt")
-    parse.add_argument('--video-offset', type=int, help='If loading prompt from video, index of frame to start reading from.', default=None)
-    parse.add_argument('--n-prompt-frames', type=int, help='If the prompt is a video, how many frames to condition on.', default=1)
-    parse.add_argument('--output-path', type=str, help='Path where generated video should be saved.', default="video.mp4")
-    parse.add_argument('--fps', type=int, help='What framerate should be used to save the output?', default=20)
-    parse.add_argument('--ddim-steps', type=int, help='How many DDIM steps?', default=50)
+    parse.add_argument(
+        "--oasis-ckpt",
+        type=str,
+        help="Path to Oasis DiT checkpoint.",
+        default="oasis500m.safetensors",
+    )
+    parse.add_argument(
+        "--vae-ckpt",
+        type=str,
+        help="Path to Oasis ViT-VAE checkpoint.",
+        default="vit-l-20.safetensors",
+    )
+    parse.add_argument(
+        "--num-frames",
+        type=int,
+        help="How many frames should the output be?",
+        default=32,
+    )
+    parse.add_argument(
+        "--prompt-path",
+        type=str,
+        help="Path to image or video to condition generation on.",
+        default="sample_data/sample_image_0.png",
+    )
+    parse.add_argument(
+        "--actions-path",
+        type=str,
+        help="File to load actions from (.actions.pt or .one_hot_actions.pt)",
+        default="sample_data/sample_actions_0.one_hot_actions.pt",
+    )
+    parse.add_argument(
+        "--video-offset",
+        type=int,
+        help="If loading prompt from video, index of frame to start reading from.",
+        default=None,
+    )
+    parse.add_argument(
+        "--n-prompt-frames",
+        type=int,
+        help="If the prompt is a video, how many frames to condition on.",
+        default=1,
+    )
+    parse.add_argument(
+        "--output-path",
+        type=str,
+        help="Path where generated video should be saved.",
+        default="video.mp4",
+    )
+    parse.add_argument(
+        "--fps",
+        type=int,
+        help="What framerate should be used to save the output?",
+        default=20,
+    )
+    parse.add_argument(
+        "--ddim-steps", type=int, help="How many DDIM steps?", default=50
+    )
 
     args = parse.parse_args()
     print("inference args:")
     pprint(vars(args))
     main(args)
-
