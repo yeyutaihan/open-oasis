@@ -5,10 +5,10 @@ Action format derived from VPT https://github.com/openai/Video-Pre-Training
 import math
 import torch
 from torch import nn
-from einops import rearrange, parse_shape
-from typing import Mapping, Sequence
-import torch
+from torchvision.io import read_image, read_video
+from torchvision.transforms.functional import resize
 from einops import rearrange
+from typing import Mapping, Sequence
 
 
 def sigmoid_beta_schedule(timesteps, start=-3, end=3, tau=1, clamp_min=1e-5):
@@ -77,3 +77,40 @@ def one_hot_actions(actions: Sequence[Mapping[str, int]]) -> torch.Tensor:
             actions_one_hot[i, j] = value
         
     return actions_one_hot
+
+IMAGE_EXTENSIONS = {"png", "jpg", "jpeg"}
+VIDEO_EXTENSIONS = {"mp4"}
+
+def load_prompt(path, video_offset=None, n_prompt_frames=1):
+    if path.lower().split(".")[-1] in IMAGE_EXTENSIONS:
+        print("prompt is image; ignoring video_offset and n_prompt_frames")
+        prompt = read_image(path)
+        # add frame dimension
+        prompt = rearrange(prompt, "c h w -> 1 c h w")
+    elif path.lower().split(".")[-1] in VIDEO_EXTENSIONS:
+        prompt = read_video(path, pts_unit="sec")[0]
+        if video_offset is not None:
+            prompt = prompt[video_offset:]
+        prompt = prompt[:n_prompt_frames]
+    else:
+        raise ValueError(f"unrecognized prompt file extension; expected one in {IMAGE_EXTENSIONS} or {VIDEO_EXTENSIONS}")
+    assert prompt.shape[0] == n_prompt_frames, f"input prompt {path} had less than n_prompt_frames={n_prompt_frames} frames"
+    prompt = resize(prompt, (360, 640))
+    # add batch dimension
+    prompt = rearrange(prompt, "t c h w -> 1 t c h w")
+    prompt = prompt.float() / 255.0
+    return prompt
+
+def load_actions(path, action_offset=None):
+    if path.endswith(".actions.pt"):
+        actions = one_hot_actions(torch.load(path))
+    elif path.endswith(".one_hot_actions.pt"):
+        actions = torch.load(path, weights_only=True)
+    else:
+        raise ValueError("unrecognized action file extension; expected '*.actions.pt' or '*.one_hot_actions.pt'")
+    if action_offset is not None:
+        actions = actions[action_offset:]
+    # add batch dimension
+    actions = rearrange(actions, "t d -> 1 t d")
+    actions[:, :1] = torch.zeros_like(actions[:, :1]) # zero-init first frame's action
+    return actions
