@@ -32,10 +32,14 @@ huggingface-cli download Etched/oasis-500m vit-l-20.safetensors  # ViT VAE check
 We include a basic inference script that loads a prompt frame from a video and generates additional frames conditioned on actions.
 ```
 python generate.py
+# Or specify path to checkpoints:
+python generate.py --oasis-ckpt <path to oasis500m.safetensors> --vae-ckpt <path to vit-l-20.safetensors>
+```
+Use a custom image prompt:
+```
+python generate.py --prompt-path <path to .png, .jpg, or .jpeg>
 ```
 The resulting video will be saved to `video.mp4`. Here's are some examples of a generation from this 500M model!
 
 ![](media/sample_0.gif)
 ![](media/sample_1.gif)
-
-> Hint: try swapping out the `.mp4` input file in the script to try different environments!
