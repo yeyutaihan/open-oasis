@@ -51,7 +51,6 @@ def main(args):
     ddim_noise_steps = args.ddim_steps
     noise_range = torch.linspace(-1, max_noise_level - 1, ddim_noise_steps + 1)
     noise_abs_max = 20
-    ctx_max_noise_idx = ddim_noise_steps // 10 * 3
     stabilization_level = 15
 
     # get prompt image/video
@@ -62,9 +61,6 @@ def main(args):
     )
     # get input action stream
     actions = load_actions(args.actions_path, action_offset=args.video_offset)[:, :total_frames]
-    # x = torch.load("xs_original_0.pt")[6:7]
-    # actions = torch.load("external_cond_0.pt")[6:7, :total_frames]
-    # actions[:, :1] = torch.zeros_like(actions[:, :1])
 
     # sampling inputs
     x = x.to(device)
@@ -96,11 +92,7 @@ def main(args):
 
         for noise_idx in reversed(range(1, ddim_noise_steps + 1)):
             # set up noise values
-            ctx_noise_idx = min(noise_idx, ctx_max_noise_idx)
-            t_ctx = torch.full((B, i), noise_range[ctx_noise_idx], dtype=torch.long, device=device)
-            # t_ctx = torch.full(
-            #     (B, i), stabilization_level - 1, dtype=torch.long, device=device
-            # )
+            t_ctx = torch.full((B, i), stabilization_level - 1, dtype=torch.long, device=device)
             t = torch.full((B, 1), noise_range[noise_idx], dtype=torch.long, device=device)
             t_next = torch.full((B, 1), noise_range[noise_idx - 1], dtype=torch.long, device=device)
             t_next = torch.where(t_next < 0, t, t_next)
@@ -112,13 +104,6 @@ def main(args):
             x_curr = x_curr[:, start_frame:]
             t = t[:, start_frame:]
             t_next = t_next[:, start_frame:]
-
-            # add some noise to the context
-            ctx_noise = torch.randn_like(x_curr[:, :-1])
-            ctx_noise = torch.clamp(ctx_noise, -noise_abs_max, +noise_abs_max)
-            x_curr[:, :-1] = (
-                alphas_cumprod[t[:, :-1]].sqrt() * x_curr[:, :-1] + (1 - alphas_cumprod[t[:, :-1]]).sqrt() * ctx_noise
-            )
 
             # get model predictions
             with torch.no_grad():

@@ -261,9 +261,7 @@ class AutoencoderKL(nn.Module):
     def unpatchify(self, x):
         bsz = x.shape[0]
         # unpatchify
-        x = x.reshape(bsz, self.seq_h, self.seq_w, self.patch_dim).permute(
-            [0, 3, 1, 2]
-        )  # [b, h, w, cxpxp] --> [b, cxpxp, h, w]
+        x = x.reshape(bsz, self.seq_h, self.seq_w, self.patch_dim).permute([0, 3, 1, 2])  # [b, h, w, cxpxp] --> [b, cxpxp, h, w]
         x = x.reshape(
             bsz,
             3,

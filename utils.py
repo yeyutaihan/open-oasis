@@ -97,12 +97,8 @@ def load_prompt(path, video_offset=None, n_prompt_frames=1):
             prompt = prompt[video_offset:]
         prompt = prompt[:n_prompt_frames]
     else:
-        raise ValueError(
-            f"unrecognized prompt file extension; expected one in {IMAGE_EXTENSIONS} or {VIDEO_EXTENSIONS}"
-        )
-    assert (
-        prompt.shape[0] == n_prompt_frames
-    ), f"input prompt {path} had less than n_prompt_frames={n_prompt_frames} frames"
+        raise ValueError(f"unrecognized prompt file extension; expected one in {IMAGE_EXTENSIONS} or {VIDEO_EXTENSIONS}")
+    assert prompt.shape[0] == n_prompt_frames, f"input prompt {path} had less than n_prompt_frames={n_prompt_frames} frames"
     prompt = resize(prompt, (360, 640))
     # add batch dimension
     prompt = rearrange(prompt, "t c h w -> 1 t c h w")
