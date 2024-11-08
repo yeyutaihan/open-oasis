@@ -115,7 +115,7 @@ def load_actions(path, action_offset=None):
         raise ValueError("unrecognized action file extension; expected '*.actions.pt' or '*.one_hot_actions.pt'")
     if action_offset is not None:
         actions = actions[action_offset:]
+    actions = torch.cat([torch.zeros_like(actions[:1]), actions], dim=0)
     # add batch dimension
     actions = rearrange(actions, "t d -> 1 t d")
-    actions[:, :1] = torch.zeros_like(actions[:, :1])  # zero-init first frame's action
     return actions
