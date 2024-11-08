@@ -33,14 +33,10 @@ class DiagonalGaussianDistribution(object):
         self.std = torch.exp(0.5 * self.logvar)
         self.var = torch.exp(self.logvar)
         if self.deterministic:
-            self.var = self.std = torch.zeros_like(self.mean).to(
-                device=self.parameters.device
-            )
+            self.var = self.std = torch.zeros_like(self.mean).to(device=self.parameters.device)
 
     def sample(self):
-        x = self.mean + self.std * torch.randn(self.mean.shape).to(
-            device=self.parameters.device
-        )
+        x = self.mean + self.std * torch.randn(self.mean.shape).to(device=self.parameters.device)
         return x
 
     def mode(self):
@@ -258,12 +254,8 @@ class AutoencoderKL(nn.Module):
             self.seq_w,
             self.patch_size,
         ).permute([0, 1, 3, 5, 2, 4])  # [b, c, h, p, w, p] --> [b, c, p, p, h, w]
-        x = x.reshape(
-            bsz, self.patch_dim, self.seq_h, self.seq_w
-        )  # --> [b, cxpxp, h, w]
-        x = x.permute([0, 2, 3, 1]).reshape(
-            bsz, self.seq_len, self.patch_dim
-        )  # --> [b, hxw, cxpxp]
+        x = x.reshape(bsz, self.patch_dim, self.seq_h, self.seq_w)  # --> [b, cxpxp, h, w]
+        x = x.permute([0, 2, 3, 1]).reshape(bsz, self.seq_len, self.patch_dim)  # --> [b, hxw, cxpxp]
         return x
 
     def unpatchify(self, x):
@@ -301,9 +293,7 @@ class AutoencoderKL(nn.Module):
         moments = self.quant_conv(x)
         if not self.use_variational:
             moments = torch.cat((moments, torch.zeros_like(moments)), 2)
-        posterior = DiagonalGaussianDistribution(
-            moments, deterministic=(not self.use_variational), dim=2
-        )
+        posterior = DiagonalGaussianDistribution(moments, deterministic=(not self.use_variational), dim=2)
         return posterior
 
     def decode(self, z):

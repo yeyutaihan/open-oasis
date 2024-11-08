@@ -45,9 +45,7 @@ class TemporalAxialAttention(nn.Module):
 
         q, k, v = map(lambda t: t.contiguous(), (q, k, v))
 
-        x = F.scaled_dot_product_attention(
-            query=q, key=k, value=v, is_causal=self.is_causal
-        )
+        x = F.scaled_dot_product_attention(query=q, key=k, value=v, is_causal=self.is_causal)
 
         x = rearrange(x, "(B H W) h T d -> B T H W (h d)", B=B, H=H, W=W)
         x = x.to(q.dtype)

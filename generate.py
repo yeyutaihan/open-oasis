@@ -21,6 +21,9 @@ device = "cuda:0"
 
 
 def main(args):
+    torch.manual_seed(0)
+    torch.cuda.manual_seed(0)
+
     # load DiT checkpoint
     model = DiT_models["DiT-S/2"]()
     print(f"loading Oasis-500M from oasis-ckpt={os.path.abspath(args.oasis_ckpt)}...")
@@ -42,7 +45,6 @@ def main(args):
     vae = vae.to(device).eval()
 
     # sampling params
-    B = 1
     n_prompt_frames = args.n_prompt_frames
     total_frames = args.num_frames
     max_noise_level = 1000
@@ -50,6 +52,7 @@ def main(args):
     noise_range = torch.linspace(-1, max_noise_level - 1, ddim_noise_steps + 1)
     noise_abs_max = 20
     ctx_max_noise_idx = ddim_noise_steps // 10 * 3
+    stabilization_level = 15
 
     # get prompt image/video
     x = load_prompt(
@@ -58,30 +61,28 @@ def main(args):
         n_prompt_frames=n_prompt_frames,
     )
     # get input action stream
-    actions = load_actions(args.actions_path, action_offset=args.video_offset)[
-        :, :total_frames
-    ]
+    actions = load_actions(args.actions_path, action_offset=args.video_offset)[:, :total_frames]
+    # x = torch.load("xs_original_0.pt")[6:7]
+    # actions = torch.load("external_cond_0.pt")[6:7, :total_frames]
+    # actions[:, :1] = torch.zeros_like(actions[:, :1])
 
     # sampling inputs
     x = x.to(device)
     actions = actions.to(device)
 
     # vae encoding
+    B = x.shape[0]
+    H, W = x.shape[-2:]
     scaling_factor = 0.07843137255
     x = rearrange(x, "b t c h w -> (b t) c h w")
-    H, W = x.shape[-2:]
     with torch.no_grad():
-        x = vae.encode(x * 2 - 1).mean * scaling_factor
-    x = rearrange(
-        x,
-        "(b t) (h w) c -> b t c h w",
-        t=n_prompt_frames,
-        h=H // vae.patch_size,
-        w=W // vae.patch_size,
-    )
+        with autocast("cuda", dtype=torch.half):
+            x = vae.encode(x * 2 - 1).mean * scaling_factor
+    x = rearrange(x, "(b t) (h w) c -> b t c h w", t=n_prompt_frames, h=H // vae.patch_size, w=W // vae.patch_size)
+    x = x[:, :n_prompt_frames]
 
     # get alphas
-    betas = sigmoid_beta_schedule(max_noise_level).to(device)
+    betas = sigmoid_beta_schedule(max_noise_level).float().to(device)
     alphas = 1.0 - betas
     alphas_cumprod = torch.cumprod(alphas, dim=0)
     alphas_cumprod = rearrange(alphas_cumprod, "T -> T 1 1 1")
@@ -96,15 +97,12 @@ def main(args):
         for noise_idx in reversed(range(1, ddim_noise_steps + 1)):
             # set up noise values
             ctx_noise_idx = min(noise_idx, ctx_max_noise_idx)
-            t_ctx = torch.full(
-                (B, i), noise_range[ctx_noise_idx], dtype=torch.long, device=device
-            )
-            t = torch.full(
-                (B, 1), noise_range[noise_idx], dtype=torch.long, device=device
-            )
-            t_next = torch.full(
-                (B, 1), noise_range[noise_idx - 1], dtype=torch.long, device=device
-            )
+            t_ctx = torch.full((B, i), noise_range[ctx_noise_idx], dtype=torch.long, device=device)
+            # t_ctx = torch.full(
+            #     (B, i), stabilization_level - 1, dtype=torch.long, device=device
+            # )
+            t = torch.full((B, 1), noise_range[noise_idx], dtype=torch.long, device=device)
+            t_next = torch.full((B, 1), noise_range[noise_idx - 1], dtype=torch.long, device=device)
             t_next = torch.where(t_next < 0, t, t_next)
             t = torch.cat([t_ctx, t], dim=1)
             t_next = torch.cat([t_ctx, t_next], dim=1)
@@ -119,8 +117,7 @@ def main(args):
             ctx_noise = torch.randn_like(x_curr[:, :-1])
             ctx_noise = torch.clamp(ctx_noise, -noise_abs_max, +noise_abs_max)
             x_curr[:, :-1] = (
-                alphas_cumprod[t[:, :-1]].sqrt() * x_curr[:, :-1]
-                + (1 - alphas_cumprod[t[:, :-1]]).sqrt() * ctx_noise
+                alphas_cumprod[t[:, :-1]].sqrt() * x_curr[:, :-1] + (1 - alphas_cumprod[t[:, :-1]]).sqrt() * ctx_noise
             )
 
             # get model predictions
@@ -128,18 +125,15 @@ def main(args):
                 with autocast("cuda", dtype=torch.half):
                     v = model(x_curr, t, actions[:, start_frame : i + 1])
 
-            x_start = (
-                alphas_cumprod[t].sqrt() * x_curr - (1 - alphas_cumprod[t]).sqrt() * v
-            )
-            x_noise = ((1 / alphas_cumprod[t]).sqrt() * x_curr - x_start) / (
-                1 / alphas_cumprod[t] - 1
-            ).sqrt()
+            x_start = alphas_cumprod[t].sqrt() * x_curr - (1 - alphas_cumprod[t]).sqrt() * v
+            x_noise = ((1 / alphas_cumprod[t]).sqrt() * x_curr - x_start) / (1 / alphas_cumprod[t] - 1).sqrt()
 
             # get frame prediction
-            x_pred = (
-                alphas_cumprod[t_next].sqrt() * x_start
-                + x_noise * (1 - alphas_cumprod[t_next]).sqrt()
-            )
+            alpha_next = alphas_cumprod[t_next]
+            alpha_next[:, :-1] = torch.ones_like(alpha_next[:, :-1])
+            if noise_idx == 1:
+                alpha_next[:, -1:] = torch.ones_like(alpha_next[:, -1:])
+            x_pred = alpha_next.sqrt() * x_start + x_noise * (1 - alpha_next).sqrt()
             x[:, -1:] = x_pred[:, -1:]
 
     # vae decoding
@@ -212,9 +206,7 @@ if __name__ == "__main__":
         help="What framerate should be used to save the output?",
         default=20,
     )
-    parse.add_argument(
-        "--ddim-steps", type=int, help="How many DDIM steps?", default=50
-    )
+    parse.add_argument("--ddim-steps", type=int, help="How many DDIM steps?", default=50)
 
     args = parse.parse_args()
     print("inference args:")

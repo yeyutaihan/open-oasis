@@ -56,15 +56,13 @@ class PatchEmbed(nn.Module):
         self.num_patches = self.grid_size[0] * self.grid_size[1]
         self.flatten = flatten
 
-        self.proj = nn.Conv2d(
-            in_chans, embed_dim, kernel_size=patch_size, stride=patch_size
-        )
+        self.proj = nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size)
         self.norm = norm_layer(embed_dim) if norm_layer else nn.Identity()
 
     def forward(self, x, random_sample=False):
         B, C, H, W = x.shape
-        assert (
-            random_sample or (H == self.img_size[0] and W == self.img_size[1])
+        assert random_sample or (
+            H == self.img_size[0] and W == self.img_size[1]
         ), f"Input image size ({H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]})."
         x = self.proj(x)
         if self.flatten:
@@ -83,9 +81,7 @@ class TimestepEmbedder(nn.Module):
     def __init__(self, hidden_size, frequency_embedding_size=256):
         super().__init__()
         self.mlp = nn.Sequential(
-            nn.Linear(
-                frequency_embedding_size, hidden_size, bias=True
-            ),  # hidden_size is diffusion model hidden size
+            nn.Linear(frequency_embedding_size, hidden_size, bias=True),  # hidden_size is diffusion model hidden size
             nn.SiLU(),
             nn.Linear(hidden_size, hidden_size, bias=True),
         )
@@ -103,17 +99,13 @@ class TimestepEmbedder(nn.Module):
         """
         # https://github.com/openai/glide-text2im/blob/main/glide_text2im/nn.py
         half = dim // 2
-        freqs = torch.exp(
-            -math.log(max_period)
-            * torch.arange(start=0, end=half, dtype=torch.float32)
-            / half
-        ).to(device=t.device)
+        freqs = torch.exp(-math.log(max_period) * torch.arange(start=0, end=half, dtype=torch.float32) / half).to(
+            device=t.device
+        )
         args = t[:, None].float() * freqs[None]
         embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
         if dim % 2:
-            embedding = torch.cat(
-                [embedding, torch.zeros_like(embedding[:, :1])], dim=-1
-            )
+            embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
         return embedding
 
     def forward(self, t):
@@ -130,12 +122,8 @@ class FinalLayer(nn.Module):
     def __init__(self, hidden_size, patch_size, out_channels):
         super().__init__()
         self.norm_final = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
-        self.linear = nn.Linear(
-            hidden_size, patch_size * patch_size * out_channels, bias=True
-        )
-        self.adaLN_modulation = nn.Sequential(
-            nn.SiLU(), nn.Linear(hidden_size, 2 * hidden_size, bias=True)
-        )
+        self.linear = nn.Linear(hidden_size, patch_size * patch_size * out_channels, bias=True)
+        self.adaLN_modulation = nn.Sequential(nn.SiLU(), nn.Linear(hidden_size, 2 * hidden_size, bias=True))
 
     def forward(self, x, c):
         shift, scale = self.adaLN_modulation(c).chunk(2, dim=-1)
@@ -173,9 +161,7 @@ class SpatioTemporalDiTBlock(nn.Module):
             act_layer=approx_gelu,
             drop=0,
         )
-        self.s_adaLN_modulation = nn.Sequential(
-            nn.SiLU(), nn.Linear(hidden_size, 6 * hidden_size, bias=True)
-        )
+        self.s_adaLN_modulation = nn.Sequential(nn.SiLU(), nn.Linear(hidden_size, 6 * hidden_size, bias=True))
 
         self.t_norm1 = nn.LayerNorm(hidden_size, elementwise_affine=False, eps=1e-6)
         self.t_attn = TemporalAxialAttention(
@@ -192,34 +178,24 @@ class SpatioTemporalDiTBlock(nn.Module):
             act_layer=approx_gelu,
             drop=0,
         )
-        self.t_adaLN_modulation = nn.Sequential(
-            nn.SiLU(), nn.Linear(hidden_size, 6 * hidden_size, bias=True)
-        )
+        self.t_adaLN_modulation = nn.Sequential(nn.SiLU(), nn.Linear(hidden_size, 6 * hidden_size, bias=True))
 
     def forward(self, x, c):
         B, T, H, W, D = x.shape
 
         # spatial block
-        s_shift_msa, s_scale_msa, s_gate_msa, s_shift_mlp, s_scale_mlp, s_gate_mlp = (
-            self.s_adaLN_modulation(c).chunk(6, dim=-1)
+        s_shift_msa, s_scale_msa, s_gate_msa, s_shift_mlp, s_scale_mlp, s_gate_mlp = self.s_adaLN_modulation(c).chunk(
+            6, dim=-1
         )
-        x = x + gate(
-            self.s_attn(modulate(self.s_norm1(x), s_shift_msa, s_scale_msa)), s_gate_msa
-        )
-        x = x + gate(
-            self.s_mlp(modulate(self.s_norm2(x), s_shift_mlp, s_scale_mlp)), s_gate_mlp
-        )
+        x = x + gate(self.s_attn(modulate(self.s_norm1(x), s_shift_msa, s_scale_msa)), s_gate_msa)
+        x = x + gate(self.s_mlp(modulate(self.s_norm2(x), s_shift_mlp, s_scale_mlp)), s_gate_mlp)
 
         # temporal block
-        t_shift_msa, t_scale_msa, t_gate_msa, t_shift_mlp, t_scale_mlp, t_gate_mlp = (
-            self.t_adaLN_modulation(c).chunk(6, dim=-1)
+        t_shift_msa, t_scale_msa, t_gate_msa, t_shift_mlp, t_scale_mlp, t_gate_mlp = self.t_adaLN_modulation(c).chunk(
+            6, dim=-1
         )
-        x = x + gate(
-            self.t_attn(modulate(self.t_norm1(x), t_shift_msa, t_scale_msa)), t_gate_msa
-        )
-        x = x + gate(
-            self.t_mlp(modulate(self.t_norm2(x), t_shift_mlp, t_scale_mlp)), t_gate_mlp
-        )
+        x = x + gate(self.t_attn(modulate(self.t_norm1(x), t_shift_msa, t_scale_msa)), t_gate_msa)
+        x = x + gate(self.t_mlp(modulate(self.t_norm2(x), t_shift_mlp, t_scale_mlp)), t_gate_mlp)
 
         return x
 
@@ -249,21 +225,13 @@ class DiT(nn.Module):
         self.num_heads = num_heads
         self.max_frames = max_frames
 
-        self.x_embedder = PatchEmbed(
-            input_h, input_w, patch_size, in_channels, hidden_size, flatten=False
-        )
+        self.x_embedder = PatchEmbed(input_h, input_w, patch_size, in_channels, hidden_size, flatten=False)
         self.t_embedder = TimestepEmbedder(hidden_size)
         frame_h, frame_w = self.x_embedder.grid_size
 
-        self.spatial_rotary_emb = RotaryEmbedding(
-            dim=hidden_size // num_heads // 2, freqs_for="pixel", max_freq=256
-        )
+        self.spatial_rotary_emb = RotaryEmbedding(dim=hidden_size // num_heads // 2, freqs_for="pixel", max_freq=256)
         self.temporal_rotary_emb = RotaryEmbedding(dim=hidden_size // num_heads)
-        self.external_cond = (
-            nn.Linear(external_cond_dim, hidden_size)
-            if external_cond_dim > 0
-            else nn.Identity()
-        )
+        self.external_cond = nn.Linear(external_cond_dim, hidden_size) if external_cond_dim > 0 else nn.Identity()
 
         self.blocks = nn.ModuleList(
             [
@@ -340,9 +308,7 @@ class DiT(nn.Module):
 
         # add spatial embeddings
         x = rearrange(x, "b t c h w -> (b t) c h w")
-        x = self.x_embedder(
-            x
-        )  # (B*T, C, H, W) -> (B*T, H/2, W/2, D) , C = 16, D = d_model
+        x = self.x_embedder(x)  # (B*T, C, H, W) -> (B*T, H/2, W/2, D) , C = 16, D = d_model
         # restore shape
         x = rearrange(x, "(b t) h w d -> b t h w d", t=T)
         # embed noise steps

@@ -19,12 +19,10 @@ def sigmoid_beta_schedule(timesteps, start=-3, end=3, tau=1, clamp_min=1e-5):
     better for images > 64x64, when used during training
     """
     steps = timesteps + 1
-    t = torch.linspace(0, timesteps, steps, dtype=torch.float32) / timesteps
+    t = torch.linspace(0, timesteps, steps, dtype=torch.float64) / timesteps
     v_start = torch.tensor(start / tau).sigmoid()
     v_end = torch.tensor(end / tau).sigmoid()
-    alphas_cumprod = (-((t * (end - start) + start) / tau).sigmoid() + v_end) / (
-        v_end - v_start
-    )
+    alphas_cumprod = (-((t * (end - start) + start) / tau).sigmoid() + v_end) / (v_end - v_start)
     alphas_cumprod = alphas_cumprod / alphas_cumprod[0]
     betas = 1 - (alphas_cumprod[1:] / alphas_cumprod[:-1])
     return torch.clip(betas, 0, 0.999)
@@ -74,9 +72,7 @@ def one_hot_actions(actions: Sequence[Mapping[str, int]]) -> torch.Tensor:
                 bin_size = 0.5
                 num_buckets = int(max_val / bin_size)
                 value = (value - num_buckets) / num_buckets
-                assert (
-                    -1 - 1e-3 <= value <= 1 + 1e-3
-                ), f"Camera action value must be in [-1, 1], got {value}"
+                assert -1 - 1e-3 <= value <= 1 + 1e-3, f"Camera action value must be in [-1, 1], got {value}"
             else:
                 value = current_actions[action_key]
                 assert 0 <= value <= 1, f"Action value must be in [0, 1] got {value}"
@@ -120,9 +116,7 @@ def load_actions(path, action_offset=None):
     elif path.endswith(".one_hot_actions.pt"):
         actions = torch.load(path, weights_only=True)
     else:
-        raise ValueError(
-            "unrecognized action file extension; expected '*.actions.pt' or '*.one_hot_actions.pt'"
-        )
+        raise ValueError("unrecognized action file extension; expected '*.actions.pt' or '*.one_hot_actions.pt'")
     if action_offset is not None:
         actions = actions[action_offset:]
     # add batch dimension
