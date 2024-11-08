@@ -191,7 +191,7 @@ if __name__ == "__main__":
         help="What framerate should be used to save the output?",
         default=20,
     )
-    parse.add_argument("--ddim-steps", type=int, help="How many DDIM steps?", default=50)
+    parse.add_argument("--ddim-steps", type=int, help="How many DDIM steps?", default=10)
 
     args = parse.parse_args()
     print("inference args:")
