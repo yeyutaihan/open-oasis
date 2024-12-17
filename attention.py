@@ -48,7 +48,7 @@ class TemporalAxialAttention(nn.Module):
         x = F.scaled_dot_product_attention(query=q, key=k, value=v, is_causal=self.is_causal)
 
         x = rearrange(x, "(B H W) h T d -> B T H W (h d)", B=B, H=H, W=W)
-        x = x.to(q.dtype)
+        x = x.type_as(q)
 
         # linear proj
         x = self.to_out(x)
@@ -94,7 +94,7 @@ class SpatialAxialAttention(nn.Module):
         x = F.scaled_dot_product_attention(query=q, key=k, value=v, is_causal=False)
 
         x = rearrange(x, "(B T) h (H W) d -> B T H W (h d)", B=B, H=H, W=W)
-        x = x.to(q.dtype)
+        x = x.type_as(q)
 
         # linear proj
         x = self.to_out(x)

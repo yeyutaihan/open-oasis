@@ -85,7 +85,7 @@ def main(args):
 
     # sampling loop
     for i in tqdm(range(n_prompt_frames, total_frames)):
-        chunk = torch.randn((B, 1, *x.shape[-3:]), device=device)
+        chunk = torch.randn((B, 1, *x.shape[-3:]), device=device) # (B, 1, C, H, W)
         chunk = torch.clamp(chunk, -noise_abs_max, +noise_abs_max)
         x = torch.cat([x, chunk], dim=1)
         start_frame = max(0, i + 1 - model.max_frames)
